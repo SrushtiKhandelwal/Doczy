@@ -42,3 +42,8 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+CLAUDE.md
+build.log
+.mcp.json
+skills-lock.json
+.agents
