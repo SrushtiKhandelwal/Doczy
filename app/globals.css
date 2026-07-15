@@ -1,0 +1,273 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+
+:root {
+  /* Colors — dark mode only */
+  --bg:            #09090b;   /* zinc-950 */
+  --surface:       #111113;   /* near-black surface */
+  --surface-2:     #18181b;   /* zinc-900 */
+  --surface-3:     #27272a;   /* zinc-800 */
+  --border:        #27272a;   /* zinc-800 */
+  --border-subtle: rgba(255,255,255,0.06);
+  --text:          #fafafa;   /* zinc-50 */
+  --text-muted:    #a1a1aa;   /* zinc-400 */
+  --text-dimmed:   #52525b;   /* zinc-600 */
+  --accent:        #e4e4e7;   /* zinc-200 */
+
+  /* Brand */
+  --brand:         #6366f1;   /* indigo-500 */
+  --brand-hover:   #818cf8;   /* indigo-400 */
+  --brand-glow:    rgba(99,102,241,0.2);
+  --brand-subtle:  rgba(99,102,241,0.08);
+
+  /* Semantic */
+  --success:       #22c55e;
+  --success-bg:    rgba(34,197,94,0.08);
+  --error:         #ef4444;
+  --error-bg:      rgba(239,68,68,0.08);
+  --warning:       #f59e0b;
+  --warning-bg:    rgba(245,158,11,0.08);
+
+  /* Radius — concentric by design */
+  --radius-xs:     4px;
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     14px;
+  --radius-xl:     18px;
+  --radius-2xl:    24px;
+  --radius-full:   9999px;
+
+  /* Shadows — layered, transparent */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4),
+               0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5),
+               0 1px 2px rgba(0,0,0,0.4),
+               0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6),
+               0 2px 8px rgba(0,0,0,0.4),
+               0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-brand: 0 0 0 1px rgba(99,102,241,0.3),
+                  0 4px 16px rgba(99,102,241,0.15);
+
+  /* Timing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:  cubic-bezier(0.4, 0, 1, 1);
+  --ease:     cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  text-wrap: pretty;
+  min-height: 100dvh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Surface layers */
+.surface {
+  background: var(--surface);
+}
+.surface-2 {
+  background: var(--surface-2);
+}
+.surface-3 {
+  background: var(--surface-3);
+}
+
+/* Gradient mesh background */
+.bg-mesh {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99,102,241,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(139,92,246,0.06) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* Glass morphism card */
+.glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+}
+
+/* Stagger animation classes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: fadeInUp 500ms var(--ease-out) forwards;
+}
+
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 80ms; }
+.stagger-3 { animation-delay: 160ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 320ms; }
+
+/* Button base */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition-property: background-color, color, opacity, transform, box-shadow, scale;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  min-height: 40px;
+  padding: 0 16px;
+  letter-spacing: -0.01em;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.btn:active:not(:disabled) {
+  scale: 0.96;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--text);
+  color: var(--bg);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.btn-brand {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.4), 0 2px 8px rgba(99,102,241,0.2);
+}
+.btn-brand:hover:not(:disabled) {
+  background: var(--brand-hover);
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.5), 0 4px 16px rgba(99,102,241,0.3);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.btn-danger {
+  background: var(--error-bg);
+  color: var(--error);
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.2);
+}
+
+.btn-lg {
+  min-height: 48px;
+  padding: 0 24px;
+  font-size: 15px;
+  border-radius: var(--radius-lg);
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-static:active {
+  scale: 1 !important;
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
+}
+
+/* ============================================================
+   FOCUS & SELECTION
+   ============================================================ */
+::selection {
+  background: rgba(99,102,241,0.3);
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
