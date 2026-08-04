@@ -14,6 +14,16 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "25mb",
     },
   },
+
+  // convertPdfToImage() reads pdfjs-dist's browser build files straight off
+  // disk at runtime (a dynamically-constructed fs path, not a static
+  // import), so Vercel's build-time file tracer can't discover them on its
+  // own and won't include them in the deployed function bundle — causing an
+  // ENOENT that only shows up in production, never locally (dev always has
+  // the full node_modules on disk). This forces them to be included.
+  outputFileTracingIncludes: {
+    "/api/convert": ["./node_modules/pdfjs-dist/build/*.mjs"],
+  },
 };
 
 export default nextConfig;
