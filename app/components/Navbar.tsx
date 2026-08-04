@@ -1,75 +1,44 @@
-"use client";
-
 import Link from "next/link";
-import { UserButton, SignInButton, useAuth } from "@clerk/nextjs";
-import { FileText } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CONVERSION_LIST } from "@/lib/conversions";
 
 export default function Navbar() {
-  const { isSignedIn, isLoaded } = useAuth();
-
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        padding: "0 24px",
-        height: "56px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: "rgba(9,9,11,0.7)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid var(--border-subtle)",
-      }}
-    >
-      {/* Logo */}
-      <Link
-        href="/"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          fontWeight: 600,
-          fontSize: "15px",
-          letterSpacing: "-0.02em",
-          color: "var(--text)",
-        }}
-      >
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "28px",
-            height: "28px",
-            background: "var(--brand)",
-            borderRadius: "var(--radius-sm)",
-            color: "#fff",
-          }}
-        >
-          <FileText size={15} />
-        </span>
-        Doczy
-      </Link>
+    <div className="sticky top-4 z-50 mx-auto w-full max-w-6xl px-6 lg:px-10">
+      <header className="flex h-15 items-center justify-between rounded-xl border border-border bg-background/90 px-6 shadow-sm backdrop-blur-md">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="size-2 rounded-full bg-primary" />
+          <span className="text-[22px] font-bold tracking-tight text-foreground lowercase">
+            doczy
+          </span>
+        </Link>
 
-      {/* Auth */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        {!isLoaded ? null : isSignedIn ? (
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: { width: 30, height: 30 },
-              },
-            }}
-          />
-        ) : (
-          <SignInButton mode="modal">
-            <button className="btn btn-ghost btn-sm">Sign in</button>
-          </SignInButton>
-        )}
-      </div>
-    </header>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="gap-1.5" />}
+          >
+            Tools
+            <ChevronDown className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-56">
+            {CONVERSION_LIST.map((conv) => (
+              <DropdownMenuItem
+                key={conv.id}
+                render={<Link href={`/convert/${conv.id}`} />}
+              >
+                {conv.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
+    </div>
   );
 }

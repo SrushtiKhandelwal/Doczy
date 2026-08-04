@@ -2,12 +2,11 @@
 
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
-import ConversionSelector from "./ConversionSelector";
+import { Sparkles, Loader2 } from "lucide-react";
 import DropZone from "./DropZone";
 import StatusPanel, { type ConversionStatus } from "./StatusPanel";
 import { CONVERSIONS, type ConversionType } from "@/lib/conversions";
-import Button from "./ui/Button";
+import { Button } from "@/components/ui/button";
 
 const ERROR_CODE_MAP: Record<string, ConversionStatus> = {
   FILE_TOO_LARGE: "error-too-large",
@@ -18,9 +17,11 @@ const ERROR_CODE_MAP: Record<string, ConversionStatus> = {
   SERVER_BUSY: "error-busy",
 };
 
-export default function ConverterCard() {
-  const [conversionType, setConversionType] =
-    useState<ConversionType>("docx-to-pdf");
+interface ConverterCardProps {
+  conversionType: ConversionType;
+}
+
+export default function ConverterCard({ conversionType }: ConverterCardProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<ConversionStatus>("idle");
   const [downloadUrl, setDownloadUrl] = useState<string | undefined>();
@@ -28,12 +29,21 @@ export default function ConverterCard() {
 
   const conversion = CONVERSIONS[conversionType];
 
-  const handleConversionTypeChange = (type: ConversionType) => {
-    setConversionType(type);
-    setFiles([]);
-    setStatus("idle");
-    setDownloadUrl(undefined);
-  };
+  // Changing the file selection after a completed (or failed) attempt must
+  // invalidate that attempt's result — otherwise the stale success panel
+  // (with the *previous* file's download link) stays visible and clickable
+  // even though it no longer corresponds to what's in the drop zone.
+  const handleFilesChange = useCallback(
+    (newFiles: File[]) => {
+      setFiles(newFiles);
+      if (status !== "idle" && status !== "loading") {
+        setStatus("idle");
+        setDownloadUrl(undefined);
+        setOutputFileName(undefined);
+      }
+    },
+    [status]
+  );
 
   const handleConvert = useCallback(async () => {
     if (files.length === 0) return;
@@ -75,51 +85,21 @@ export default function ConverterCard() {
     setFiles([]);
     setStatus("idle");
     setDownloadUrl(undefined);
+    setOutputFileName(undefined);
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 24, filter: "blur(6px)" }}
-      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-      transition={{ type: "spring", duration: 0.5, bounce: 0, delay: 0.2 }}
-      style={{
-        width: "100%",
-        maxWidth: "580px",
-        margin: "0 auto",
-        borderRadius: "var(--radius-2xl)",
-        background: "var(--surface)",
-        border: "1px solid var(--border-subtle)",
-        boxShadow: "var(--shadow-lg)",
-        overflow: "hidden",
-      }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", duration: 0.4, bounce: 0 }}
+      className="mx-auto w-full overflow-hidden rounded-md border border-border bg-card"
     >
-      {/* Card header */}
-      <div
-        style={{
-          padding: "20px 24px 0",
-          borderBottom: "1px solid var(--border-subtle)",
-          paddingBottom: "20px",
-        }}
-      >
-        <ConversionSelector
-          value={conversionType}
-          onChange={handleConversionTypeChange}
-        />
-      </div>
-
-      {/* Card body */}
-      <div
-        style={{
-          padding: "24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-        }}
-      >
+      <div className="flex flex-col gap-4 p-5">
         <DropZone
           conversion={conversion}
           files={files}
-          onFiles={setFiles}
+          onFiles={handleFilesChange}
           disabled={status === "loading"}
         />
 
@@ -127,20 +107,22 @@ export default function ConverterCard() {
           status={status}
           downloadUrl={downloadUrl}
           outputFileName={outputFileName}
+          onFileNameChange={setOutputFileName}
         />
 
         {status !== "success" && (
           <Button
             id="convert-btn"
-            variant="brand"
             size="lg"
+            className="w-full"
             disabled={files.length === 0 || status === "loading"}
-            loading={status === "loading"}
-            static={status === "loading"}
             onClick={handleConvert}
-            style={{ width: "100%" }}
           >
-            <Sparkles size={16} />
+            {status === "loading" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
             {status === "loading" ? "Converting…" : `Convert to ${conversion.toLabel}`}
           </Button>
         )}
@@ -150,8 +132,8 @@ export default function ConverterCard() {
             id="convert-again-btn"
             variant="ghost"
             size="lg"
+            className="w-full"
             onClick={handleReset}
-            style={{ width: "100%" }}
           >
             Convert another file
           </Button>

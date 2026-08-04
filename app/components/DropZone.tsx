@@ -107,7 +107,7 @@ export default function DropZone({
       e.preventDefault();
       setIsDragging(false);
       if (disabled) return;
-      
+
       const droppedFiles = Array.from(e.dataTransfer.files);
       if (droppedFiles.length > 0) validateAndSet(droppedFiles);
     },
@@ -141,7 +141,7 @@ export default function DropZone({
   const acceptAttr = conversion.acceptedExtensions.join(",");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+    <div className="flex flex-col gap-2.5">
       {/* Drop zone */}
       <div
         role="button"
@@ -157,34 +157,19 @@ export default function DropZone({
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        style={{
-          position: "relative",
-          minHeight: "180px",
-          borderRadius: "var(--radius-xl)",
-          border: `2px dashed ${
-            isDragging
-              ? "var(--brand)"
-              : error
-              ? "var(--error)"
-              : files.length > 0
-              ? "var(--border)"
-              : "var(--border)"
-          }`,
-          background: isDragging
-            ? "var(--brand-subtle)"
-            : "var(--surface-2)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "12px",
-          padding: "24px",
-          cursor: disabled ? "not-allowed" : files.length > 0 && !conversion.allowMultiple ? "default" : "pointer",
-          transition:
-            "border-color 200ms var(--ease-out), background 200ms var(--ease-out), box-shadow 200ms var(--ease-out)",
-          boxShadow: isDragging ? "var(--shadow-brand)" : "none",
-          opacity: disabled ? 0.5 : 1,
-        }}
+        className={cn(
+          "flex min-h-[160px] flex-col items-center justify-center gap-3 rounded-sm border border-dashed p-4 transition-colors",
+          isDragging
+            ? "border-primary bg-primary/5"
+            : error
+              ? "border-destructive/50 bg-secondary/50"
+              : "border-border bg-secondary/50",
+          disabled
+            ? "cursor-not-allowed opacity-50"
+            : files.length > 0 && !conversion.allowMultiple
+              ? "cursor-default"
+              : "cursor-pointer"
+        )}
       >
         <input
           ref={inputRef}
@@ -192,7 +177,7 @@ export default function DropZone({
           accept={acceptAttr}
           multiple={conversion.allowMultiple}
           onChange={handleChange}
-          style={{ display: "none" }}
+          className="hidden"
           aria-hidden="true"
           id="file-input"
         />
@@ -202,17 +187,11 @@ export default function DropZone({
             /* ─ File selected state ─ */
             <motion.div
               key="file-selected"
-              initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -8, filter: "blur(4px)" }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "10px",
-                width: "100%",
-              }}
+              className="flex w-full flex-col gap-1.5"
             >
               {conversion.allowMultiple && files.length > 1 ? (
                 <DndContext
@@ -245,8 +224,9 @@ export default function DropZone({
               )}
 
               {conversion.allowMultiple && (
-                <div style={{ marginTop: "8px", fontSize: "13px", color: "var(--text-muted)" }}>
-                  Click or drag to add more {conversion.fromLabel} files
+                <div className="mt-1 px-1 font-mono text-[11px] text-muted-foreground/70">
+                  Drop another {conversion.fromLabel}, or click to add more —
+                  max {MAX_FILE_SIZE_MB} MB total
                 </div>
               )}
             </motion.div>
@@ -254,44 +234,25 @@ export default function DropZone({
             /* ─ Empty state ─ */
             <motion.div
               key="empty"
-              initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -8, filter: "blur(4px)" }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "12px",
-                textAlign: "center",
-              }}
+              className="flex flex-col items-center gap-3 text-center"
             >
-              <motion.span
-                animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "52px",
-                  height: "52px",
-                  borderRadius: "var(--radius-lg)",
-                  background: "var(--surface-3)",
-                  color: "var(--text-muted)",
-                  outline: "1px solid rgba(255,255,255,0.1)",
-                }}
-              >
-                <Upload size={22} />
-              </motion.span>
+              <span className="flex size-11 items-center justify-center rounded-sm border border-border text-muted-foreground">
+                <Upload className="size-5" />
+              </span>
 
               <div>
-                <p style={{ fontSize: "14px", fontWeight: 500, color: "var(--text)" }}>
+                <p className="text-[14px] font-medium">
                   {isDragging
                     ? "Drop your files here"
                     : "Drop your files here, or click to browse"}
                 </p>
-                <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
-                  {conversion.acceptedExtensions.join(", ")} · Max {MAX_FILE_SIZE_MB} MB
+                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                  {conversion.acceptedExtensions.join(", ")} · Max{" "}
+                  {MAX_FILE_SIZE_MB} MB
                 </p>
               </div>
             </motion.div>
@@ -303,24 +264,14 @@ export default function DropZone({
       <AnimatePresence initial={false}>
         {error && (
           <motion.div
-            initial={{ opacity: 0, y: -6 }}
+            initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
+            exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
             role="alert"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 14px",
-              borderRadius: "var(--radius-md)",
-              background: "var(--error-bg)",
-              border: "1px solid rgba(239,68,68,0.2)",
-              color: "var(--error)",
-              fontSize: "13px",
-            }}
+            className="flex items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-[13px] text-destructive"
           >
-            <AlertCircle size={15} style={{ flexShrink: 0 }} />
+            <AlertCircle className="size-3.5 shrink-0" />
             {error}
           </motion.div>
         )}
@@ -336,65 +287,44 @@ interface FileRowProps {
 }
 
 function FileRow({ file, onRemove, dragHandle }: FileRowProps) {
+  // Opens the already-selected File in a new tab via a blob URL — purely
+  // client-side, no upload/server round-trip needed. Browsers natively
+  // render HTML/PDF/images opened this way. Deliberately not revoking the
+  // object URL: the new tab needs it to stay valid for as long as it's open,
+  // and we have no way to know when that tab gets closed.
+  const handlePreview = () => {
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        width: "100%",
-        padding: "12px",
-        borderRadius: "var(--radius-md)",
-        background: "var(--surface-3)",
-        border: "1px solid var(--border)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden" }}>
+    <div className="flex items-center justify-between gap-2 rounded-sm border border-border bg-card p-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         {dragHandle}
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "36px",
-            height: "36px",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--brand-subtle)",
-            color: "var(--brand)",
-            flexShrink: 0,
-          }}
+        <button
+          type="button"
+          onClick={handlePreview}
+          aria-label={`Preview ${file.name} in a new tab`}
+          className="flex min-w-0 items-center gap-2.5 rounded-sm text-left transition-opacity hover:opacity-70"
         >
-          <FileIcon size={18} />
-        </span>
-        <div style={{ overflow: "hidden" }}>
-          <p
-            style={{
-              fontSize: "14px",
-              fontWeight: 500,
-              color: "var(--text)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {file.name}
-          </p>
-          <p
-            className="tabular-nums"
-            style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}
-          >
-            {formatBytes(file.size)}
-          </p>
-        </div>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-sm border border-border bg-secondary text-muted-foreground">
+            <FileIcon className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <p className="truncate text-[13.5px] font-medium">{file.name}</p>
+            <p className="tabular-nums font-mono text-[11px] text-muted-foreground">
+              {formatBytes(file.size)}
+            </p>
+          </span>
+        </button>
       </div>
 
       <button
         onClick={onRemove}
         aria-label="Remove selected file"
-        className="btn btn-ghost btn-sm"
-        style={{ flexShrink: 0, padding: "8px" }}
+        className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
       >
-        <X size={16} />
+        <X className="size-3.5" />
       </button>
     </div>
   );
@@ -424,16 +354,9 @@ function SortableFileRow({
             {...attributes}
             {...listeners}
             aria-label="Drag to reorder"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: "var(--text-muted)",
-              cursor: "grab",
-              touchAction: "none",
-              flexShrink: 0,
-            }}
+            className="flex shrink-0 cursor-grab items-center text-muted-foreground/60 touch-none"
           >
-            <GripVertical size={16} />
+            <GripVertical className="size-3.5" />
           </span>
         }
       />

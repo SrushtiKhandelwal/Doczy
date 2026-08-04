@@ -18,26 +18,27 @@ There is no test suite in this repo (no test runner installed, no `*.test.*`/`*.
 ## Important: this is Next.js 16, not the Next.js in your training data
 
 Breaking changes to be aware of before writing code:
-- Middleware is `proxy.ts` at the project root, not `middleware.ts`. See how it's wired below.
+- Middleware would be `proxy.ts` at the project root, not `middleware.ts` — but this project has no middleware at all right now (see Auth below).
 - Full API docs are vendored at `node_modules/next/dist/docs/` (verified genuine — matches installed version 16.2.10). Check there before assuming an API from an older Next.js version still works the same way.
 
 ## Architecture
 
-This is a **document conversion webapp**. The implementation diverges from the PRD below in one major way worth flagging up front: **there is no LibreOffice and no ClamAV daemon dependency in the actual code**. Conversions are done in pure JS/Node libraries, and the virus scan step silently no-ops when `clamdscan`/`clamscan` aren't on PATH. Don't add LibreOffice `child_process` calls expecting them to match existing patterns — there aren't any.
+This is a **document conversion webapp**. The implementation diverges from the PRD below in two major ways worth flagging up front:
+1. **There is no LibreOffice and no ClamAV daemon dependency in the actual code.** Conversions are done in pure JS/Node libraries, and the virus scan step silently no-ops when `clamdscan`/`clamscan` aren't on PATH. Don't add LibreOffice `child_process` calls expecting them to match existing patterns — there aren't any.
+2. **There is no authentication at all.** The PRD's "auth required, no anonymous usage" requirement was deliberately reversed — no comparable file-converter tool (iLovePDF, Smallpdf, etc.) gates basic conversion behind login, and Doczy had no feature that actually depended on identity (no saved history, no per-account tier). `/api/convert` is fully public. If auth ever comes back, it should be because a real feature needs it (saved conversion history, usage tiers), not as a bare gate.
 
 ### Request flow — single synchronous API route
 
 Everything happens inside one handler: [app/api/convert/route.ts](app/api/convert/route.ts). There is no job queue. In order:
 
-1. Clerk `auth()` check → 401 if unauthenticated (auth is enforced here, not in `proxy.ts` — see below).
-2. Parse `multipart/form-data`: `file` (one or more) + `conversionType`.
-3. Look up the conversion definition in `CONVERSIONS` ([lib/conversions.ts](lib/conversions.ts)) — this is the single source of truth for supported conversions, accepted MIME types/extensions, and output extension.
-4. Enforce `MAX_FILE_SIZE_BYTES` (env `MAX_FILE_SIZE_MB`, default 20).
-5. Validate real file content via magic bytes ([lib/magic.ts](lib/magic.ts)) — never trusts client-supplied MIME/extension. It sniffs ZIP-based Office formats by grepping for `word/`/`ppt/`/`xl/` inside the archive bytes, and old OLE2 Office files all collapse to one `vnd.ms-office` signature.
-6. Upload the raw input to S3 (`uploads/{userId}/{uuid}.{ext}`), write it to a local temp dir under `os.tmpdir()`.
-7. Virus scan via `clamdscan`/`clamscan` ([lib/scan.ts](lib/scan.ts)) — falls back to `"clean"` with a console warning if no scanner binary is found (the local-dev bypass; scanning doesn't actually happen outside a box with ClamAV installed).
-8. Convert via [lib/convert.ts](lib/convert.ts) (see below) → upload result to S3 (`converted/{userId}/{uuid}.{ext}`) → delete the raw upload from S3 → return a 1-hour signed download URL.
-9. Local temp dir is always cleaned up in a `finally`.
+1. Parse `multipart/form-data`: `file` (one or more) + `conversionType`.
+2. Look up the conversion definition in `CONVERSIONS` ([lib/conversions.ts](lib/conversions.ts)) — this is the single source of truth for supported conversions, accepted MIME types/extensions, and output extension.
+3. Enforce `MAX_FILE_SIZE_BYTES` (env `MAX_FILE_SIZE_MB`, default 20).
+4. Validate real file content via magic bytes ([lib/magic.ts](lib/magic.ts)) — never trusts client-supplied MIME/extension. It sniffs ZIP-based Office formats by grepping for `word/`/`ppt/`/`xl/` inside the archive bytes, and old OLE2 Office files all collapse to one `vnd.ms-office` signature.
+5. Upload the raw input to S3 (`uploads/{uuid}.{ext}`), write it to a local temp dir under `os.tmpdir()`.
+6. Virus scan via `clamdscan`/`clamscan` ([lib/scan.ts](lib/scan.ts)) — falls back to `"clean"` with a console warning if no scanner binary is found (the local-dev bypass; scanning doesn't actually happen outside a box with ClamAV installed).
+7. Convert via [lib/convert.ts](lib/convert.ts) (see below) → upload result to S3 (`converted/{uuid}.{ext}`) → delete the raw upload from S3 → return a 1-hour signed download URL.
+8. Local temp dir is always cleaned up in a `finally`.
 
 Every failure path returns a distinct `{ error, code }` JSON body with an appropriate HTTP status — follow this pattern (not a generic 500) when adding new failure modes.
 
@@ -56,9 +57,9 @@ Both Puppeteer paths launch with `--no-sandbox --disable-setuid-sandbox`, close 
 
 There's no job queue (per the PRD), so unbounded concurrent Puppeteer launches on a single EC2 instance can exhaust memory. `withRenderSlot()` is an in-process counting semaphore (`MAX_CONCURRENT_RENDERS` env var, default `2`) that the two Puppeteer call sites (`htmlToPdf`, `convertPdfToImage`) go through — callers past the limit wait in-memory for a free slot (default 60s) before throwing `ServerBusyError`. This is bounded and in-memory, not a persistent queue. `convertFile`'s catch-all lets `ServerBusyError` pass through unwrapped so `route.ts` can return a distinct `503 SERVER_BUSY` instead of folding it into the generic `CONVERSION_FAILED` path.
 
-### Auth — split between proxy and route handler
+### Auth — none
 
-[proxy.ts](proxy.ts) (Next 16's replacement for `middleware.ts`) runs `clerkMiddleware` on all routes but **deliberately does not block/redirect** — it only exists so Clerk's session context is available. The actual gate is the `auth()` check inside `/api/convert`, which returns a structured JSON 401 instead of a redirect. On the client, [app/components/AuthGate.tsx](app/components/AuthGate.tsx) conditionally renders the converter UI vs. a sign-in prompt based on `useAuth()`. If you add a new API route that needs auth, replicate the route-level `auth()` check — don't expect `proxy.ts` to enforce it.
+Doczy briefly used Clerk for auth-gated access; it was removed entirely (see the divergence note above) — no `proxy.ts`/middleware, no session check in `/api/convert`, no sign-in UI. Every route and page is fully public. Don't reintroduce a Clerk-shaped "must be signed in" gate without a real feature driving it.
 
 ### S3 ([lib/s3.ts](lib/s3.ts))
 

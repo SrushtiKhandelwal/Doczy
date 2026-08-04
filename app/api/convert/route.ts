@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { writeFile, readFile, rm, mkdir } from "fs/promises";
 import path from "path";
@@ -20,13 +19,7 @@ function errorResponse(code: string, message: string, status: number) {
 }
 
 export async function POST(req: NextRequest) {
-  // ── 1. Auth ──────────────────────────────────────────────────────────────
-  const { userId } = await auth();
-  if (!userId) {
-    return errorResponse("UNAUTHORIZED", "You must be signed in to convert files.", 401);
-  }
-
-  // ── 2. Parse multipart form data ─────────────────────────────────────────
+  // ── 1. Parse multipart form data ─────────────────────────────────────────
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -102,8 +95,8 @@ export async function POST(req: NextRequest) {
   // ── 7. Upload raw files to S3 (optional, doing first file for now to keep history) ─────────────────────────────────────────────
   const uuid = randomUUID();
   const firstInputExt = path.extname(files[0].name) || `.${conversion.acceptedExtensions[0].replace(".", "")}`;
-  const s3InputKey = `uploads/${userId}/${uuid}${firstInputExt}`;
-  const s3OutputKey = `converted/${userId}/${uuid}.${conversion.outputExtension}`;
+  const s3InputKey = `uploads/${uuid}${firstInputExt}`;
+  const s3OutputKey = `converted/${uuid}.${conversion.outputExtension}`;
 
   try {
     await uploadToS3(s3InputKey, fileBuffers[0], primaryMime ?? "application/octet-stream");

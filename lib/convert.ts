@@ -112,9 +112,11 @@ function getPdfjsAssets() {
 /**
  * PDF → Image using Puppeteer + pdfjs-dist in the browser.
  *
- * Loads pdf.js inside headless Chromium (its native environment),
- * renders the first page to a &lt;canvas&gt;, then screenshots that canvas.
- * This completely avoids Node.js/canvas polyfill compatibility issues.
+ * Loads pdf.js inside headless Chromium (its native environment), renders
+ * every page to a &lt;canvas&gt;, and screenshots each one. This completely
+ * avoids Node.js/canvas polyfill compatibility issues. One page can produce
+ * one image, so — same as `pdf-split` — multiple pages come back as a
+ * `.zip` of one JPEG per page.
  */
 async function convertPdfToImage(
   inputPath: string,
@@ -154,8 +156,9 @@ async function convertPdfToImage(
       await page.setContent(html, { waitUntil: "load", timeout: 30_000 });
 
       // Load pdf.js and its worker from local source text via blob URLs —
-      // no network fetch, so this works offline / behind a firewall.
-      await page.evaluate(
+      // no network fetch, so this works offline / behind a firewall. Renders
+      // every page in-browser and returns one JPEG data URL per page.
+      const pageDataUrls = await page.evaluate(
         async (pdfjsSrc: string, workerSrc: string, pdfBase64: string) => {
           const pdfjsLib = await import(
             /* webpackIgnore: true */ URL.createObjectURL(
@@ -168,42 +171,39 @@ async function convertPdfToImage(
 
           const pdfData = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
           const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-          const pdfPage = await pdf.getPage(1);
-
-          const scale = 2.5; // High-res rendering
-          const viewport = pdfPage.getViewport({ scale });
           const canvas = document.getElementById("pdf-canvas") as HTMLCanvasElement;
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-
           const ctx = canvas.getContext("2d")!;
-          await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+          const scale = 2.5; // High-res rendering
 
-          // Signal that rendering is complete
-          (window as unknown as { __PDF_RENDERED__: boolean }).__PDF_RENDERED__ = true;
+          const urls: string[] = [];
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const pdfPage = await pdf.getPage(i);
+            const viewport = pdfPage.getViewport({ scale });
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+            urls.push(canvas.toDataURL("image/jpeg", 0.92));
+          }
+          return urls;
         },
         pdfjsSource,
         workerSource,
         pdfBase64
       );
 
-      // Wait for the PDF to finish rendering
-      await page.waitForFunction("window.__PDF_RENDERED__ === true", {
-        timeout: 20_000,
+      const toBuffer = (dataUrl: string) =>
+        Buffer.from(dataUrl.replace(/^data:image\/jpeg;base64,/, ""), "base64");
+
+      // One JPEG per page, packaged as a zip — same pattern as `pdf-split`,
+      // and unconditional (even a single-page PDF still zips), so the
+      // output extension is always `.zip` regardless of page count.
+      const zip = new JSZip();
+      pageDataUrls.forEach((dataUrl, i) => {
+        zip.file(`${baseName}_page_${i + 1}.jpg`, toBuffer(dataUrl));
       });
-
-      // Extract the full canvas as a JPEG data URL from browser context
-      // This avoids viewport clipping entirely
-      const dataUrl = await page.evaluate(() => {
-        const canvas = document.getElementById("pdf-canvas") as HTMLCanvasElement;
-        return canvas.toDataURL("image/jpeg", 0.92);
-      });
-
-      // Strip the data:image/jpeg;base64, prefix and write raw bytes
-      const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
-      const outputPath = path.join(outputDir, `${baseName}.jpg`);
-      await writeFile(outputPath, Buffer.from(base64Data, "base64"));
-
+      const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+      const outputPath = path.join(outputDir, `${baseName}.zip`);
+      await writeFile(outputPath, zipBuffer);
       return { outputPath };
     } finally {
       await browser.close();
