@@ -22,14 +22,19 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // convertPdfToImage() reads pdfjs-dist's browser build files straight off
-  // disk at runtime (a dynamically-constructed fs path, not a static
-  // import), so Vercel's build-time file tracer can't discover them on its
-  // own and won't include them in the deployed function bundle — causing an
-  // ENOENT that only shows up in production, never locally (dev always has
-  // the full node_modules on disk). This forces them to be included.
+  // Two sets of files are read from disk at runtime via dynamically-built
+  // paths rather than static imports, so Vercel's build-time file tracer
+  // can't discover them on its own and won't include them in the deployed
+  // function bundle — causing errors that only appear in production, never
+  // locally (dev always has the full node_modules on disk):
+  //   1. pdfjs-dist's browser build, read by convertPdfToImage().
+  //   2. @sparticuz/chromium's brotli-compressed Chromium binary (bin/*.br),
+  //      which it decompresses at runtime in executablePath().
   outputFileTracingIncludes: {
-    "/api/convert": ["./node_modules/pdfjs-dist/build/*.mjs"],
+    "/api/convert": [
+      "./node_modules/pdfjs-dist/build/*.mjs",
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+    ],
   },
 };
 
