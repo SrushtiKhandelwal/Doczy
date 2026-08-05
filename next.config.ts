@@ -5,8 +5,15 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
 
-  // Keep AWS SDK and Node.js built-ins on the server
-  serverExternalPackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "puppeteer"],
+  // Keep AWS SDK and Node.js built-ins on the server. @sparticuz/chromium
+  // ships an actual Chromium binary that must not be bundled/transpiled.
+  serverExternalPackages: [
+    "@aws-sdk/client-s3",
+    "@aws-sdk/s3-request-presigner",
+    "puppeteer",
+    "puppeteer-core",
+    "@sparticuz/chromium",
+  ],
 
   // Increase server action body size limit (not used here, but future-proof)
   experimental: {

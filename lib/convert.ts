@@ -3,10 +3,10 @@ import path from "path";
 import type { ConversionType } from "./conversions";
 import { PDFDocument } from "pdf-lib";
 import mammoth from "mammoth";
-import puppeteer from "puppeteer";
 import { marked } from "marked";
 import JSZip from "jszip";
 import { withRenderSlot, ServerBusyError } from "./concurrency";
+import { launchBrowser } from "./browser";
 
 export interface ConversionResult {
   outputPath: string;
@@ -143,13 +143,7 @@ async function convertPdfToImage(
 </html>`;
 
   return withRenderSlot(async () => {
-    const browser = await puppeteer.launch({
-      // "shell" is the old headless-only Chrome binary — unlike `true`
-      // (Puppeteer's "new" headless mode, which is the full browser UI just
-      // normally hidden), it never has a window to flash on-screen on Windows.
-      headless: "shell",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
+    const browser = await launchBrowser();
 
     try {
       const page = await browser.newPage();
@@ -247,13 +241,7 @@ function wrapHtmlDocument(bodyHtml: string): string {
  */
 async function htmlToPdf(html: string, outputPath: string): Promise<void> {
   return withRenderSlot(async () => {
-    const browser = await puppeteer.launch({
-      // "shell" is the old headless-only Chrome binary — unlike `true`
-      // (Puppeteer's "new" headless mode, which is the full browser UI just
-      // normally hidden), it never has a window to flash on-screen on Windows.
-      headless: "shell",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
+    const browser = await launchBrowser();
 
     try {
       const page = await browser.newPage();
