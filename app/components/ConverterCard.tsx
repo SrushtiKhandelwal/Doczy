@@ -52,13 +52,51 @@ export default function ConverterCard({ conversionType }: ConverterCardProps) {
     setDownloadUrl(undefined);
 
     try {
-      const formData = new FormData();
-      files.forEach(f => formData.append("file", f));
-      formData.append("conversionType", conversionType);
+      // Files go browser → S3 directly, never through /api/convert, because
+      // Vercel hard-caps serverless request bodies at 4.5 MB. Array order is
+      // preserved across all three steps — merge/image-to-pdf depend on it.
 
+      // 1. Ask the server for presigned S3 upload URLs.
+      const presignRes = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversionType,
+          files: files.map((f) => ({ name: f.name, size: f.size })),
+        }),
+      });
+      const presignData = await presignRes.json();
+
+      if (!presignRes.ok) {
+        const errCode = presignData?.code as string | undefined;
+        setStatus(ERROR_CODE_MAP[errCode ?? ""] ?? "error-generic");
+        return;
+      }
+
+      const uploads = presignData.uploads as { key: string; url: string }[];
+
+      // 2. Upload each file straight to S3.
+      await Promise.all(
+        uploads.map(async (upload, i) => {
+          const putRes = await fetch(upload.url, {
+            method: "PUT",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: files[i],
+          });
+          if (!putRes.ok) {
+            throw new Error(`Upload failed for ${files[i].name}`);
+          }
+        })
+      );
+
+      // 3. Convert, passing only the S3 keys.
       const res = await fetch("/api/convert", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversionType,
+          files: uploads.map((u, i) => ({ key: u.key, name: files[i].name })),
+        }),
       });
 
       const data = await res.json();

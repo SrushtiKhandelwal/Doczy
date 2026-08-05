@@ -58,6 +58,28 @@ export async function downloadFromS3(key: string, destPath: string): Promise<voi
 }
 
 /**
+ * Generate a short-lived signed PUT URL so the browser can upload a file
+ * directly to S3.
+ *
+ * This exists because Vercel hard-caps serverless function request bodies at
+ * 4.5 MB — routing uploads through /api/convert would reject anything larger
+ * at their edge, before our own code (and its 20 MB limit) ever runs.
+ * Uploading browser → S3 sidesteps that entirely.
+ */
+export async function getSignedUploadUrl(
+  key: string,
+  contentType: string,
+  expiresInSeconds = 900
+): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ContentType: contentType,
+  });
+  return getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
+}
+
+/**
  * Generate a short-lived signed GET URL for a converted file.
  */
 export async function getSignedDownloadUrl(

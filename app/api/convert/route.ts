@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
-import { writeFile, readFile, rm, mkdir } from "fs/promises";
+import { readFile, rm, mkdir, stat } from "fs/promises";
 import path from "path";
 import os from "os";
 
@@ -11,36 +11,51 @@ import { convertFile, ConversionError } from "@/lib/convert";
 import { scanFile } from "@/lib/scan";
 import { ServerBusyError } from "@/lib/concurrency";
 
-// Set max duration for this route (EC2 — runs synchronously, can be slow)
+// Conversions run synchronously and can be slow for larger files.
 export const maxDuration = 120;
 
 function errorResponse(code: string, message: string, status: number) {
   return Response.json({ error: message, code }, { status });
 }
 
+interface InputFile {
+  /** S3 key the browser already uploaded to (via /api/upload-url). */
+  key: string;
+  /** Original filename, used for the extension and output naming. */
+  name: string;
+}
+
+/**
+ * Converts files the browser has already uploaded directly to S3.
+ *
+ * The raw bytes never pass through this route — only S3 keys do. That's
+ * deliberate: Vercel hard-caps serverless request bodies at 4.5 MB, so
+ * sending files here would break anything larger before our code even runs.
+ */
 export async function POST(req: NextRequest) {
-  // ── 1. Parse multipart form data ─────────────────────────────────────────
-  let formData: FormData;
+  // ── 1. Parse the (small) JSON body ───────────────────────────────────────
+  let body: { conversionType?: string; files?: InputFile[] };
   try {
-    formData = await req.formData();
+    body = await req.json();
   } catch {
-    return errorResponse("INVALID_REQUEST", "Could not parse form data.", 400);
+    return errorResponse("INVALID_REQUEST", "Could not parse request body.", 400);
   }
 
-  const conversionType = formData.get("conversionType") as string | null;
-  const fileEntries = formData.getAll("file");
-  
-  if (!conversionType || fileEntries.length === 0 || !fileEntries.every(f => f instanceof File)) {
+  const { conversionType, files } = body;
+
+  if (!conversionType || !Array.isArray(files) || files.length === 0) {
     return errorResponse(
       "INVALID_REQUEST",
-      "Missing required fields: file (at least one) and conversionType.",
+      "Missing required fields: conversionType and at least one uploaded file.",
       400
     );
   }
 
-  const files = fileEntries as File[];
+  if (!files.every((f) => typeof f?.key === "string" && f.key.startsWith("uploads/"))) {
+    return errorResponse("INVALID_REQUEST", "Invalid upload reference.", 400);
+  }
 
-  // ── 3. Validate conversion type ──────────────────────────────────────────
+  // ── 2. Validate conversion type ──────────────────────────────────────────
   const conversion = CONVERSIONS[conversionType as keyof typeof CONVERSIONS];
   if (!conversion) {
     return errorResponse(
@@ -50,85 +65,88 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── 4. File size check ───────────────────────────────────────────────────
-  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-  if (totalSize > MAX_FILE_SIZE_BYTES) {
-    return errorResponse(
-      "FILE_TOO_LARGE",
-      `Total file size exceeds the ${process.env.MAX_FILE_SIZE_MB ?? 20} MB limit.`,
-      413
-    );
-  }
+  const uuid = randomUUID();
+  const tmpDir = path.join(os.tmpdir(), `doczy-${uuid}`);
+  const s3InputKeys = files.map((f) => f.key);
+  const s3OutputKey = `converted/${uuid}.${conversion.outputExtension}`;
 
-  // ── 5. Read file bytes ───────────────────────────────────────────────────
-  const fileBuffers = await Promise.all(files.map(f => f.arrayBuffer().then(ab => Buffer.from(ab))));
+  const cleanupInputs = () =>
+    Promise.all(s3InputKeys.map((k) => deleteFromS3(k).catch(() => {})));
 
-  // ── 6. Magic-byte MIME validation ────────────────────────────────────────
-  // Plain-text formats (Markdown, HTML) have no magic number, so they're
-  // validated via a text-vs-binary heuristic instead of a byte signature.
-  const isTextConversion = conversion.acceptedMimes.every((m) => m.startsWith("text/"));
-  let primaryMime: string | undefined;
-  for (let i = 0; i < fileBuffers.length; i++) {
-    if (isTextConversion) {
-      if (!isLikelyTextFile(fileBuffers[i])) {
+  try {
+    // ── 3. Download the browser-uploaded files from S3 ─────────────────────
+    const localInputPaths: string[] = [];
+    try {
+      await mkdir(tmpDir, { recursive: true });
+      for (let i = 0; i < files.length; i++) {
+        const ext =
+          path.extname(files[i].name || "") ||
+          `.${conversion.acceptedExtensions[0].replace(".", "")}`;
+        const localPath = path.join(tmpDir, `input-${i}${ext}`);
+        await downloadFromS3(files[i].key, localPath);
+        localInputPaths.push(localPath);
+      }
+    } catch (err) {
+      await cleanupInputs();
+      console.error("[convert] S3 download failed:", err);
+      return errorResponse(
+        "S3_UPLOAD_FAILED",
+        "Could not retrieve the uploaded file. Please try again.",
+        500
+      );
+    }
+
+    // ── 4. Authoritative size check on the REAL bytes ──────────────────────
+    // /api/upload-url also checks size, but only against client-declared
+    // values — this is the check that actually enforces the limit.
+    let totalSize = 0;
+    for (const localPath of localInputPaths) {
+      totalSize += (await stat(localPath)).size;
+    }
+    if (totalSize > MAX_FILE_SIZE_BYTES) {
+      await cleanupInputs();
+      return errorResponse(
+        "FILE_TOO_LARGE",
+        `Total file size exceeds the ${process.env.MAX_FILE_SIZE_MB ?? 20} MB limit.`,
+        413
+      );
+    }
+
+    // ── 5. Magic-byte MIME validation on real content ──────────────────────
+    // Plain-text formats (Markdown, HTML) have no magic number, so they're
+    // validated via a text-vs-binary heuristic instead of a byte signature.
+    const isTextConversion = conversion.acceptedMimes.every((m) => m.startsWith("text/"));
+    for (let i = 0; i < localInputPaths.length; i++) {
+      const buf = await readFile(localInputPaths[i]);
+
+      if (isTextConversion) {
+        if (!isLikelyTextFile(buf)) {
+          await cleanupInputs();
+          return errorResponse(
+            "INVALID_FILE_TYPE",
+            `File ${files[i].name} doesn't look like a text file. Expected: ${conversion.label}.`,
+            415
+          );
+        }
+        continue;
+      }
+
+      const { valid, detectedMime } = validateMagicBytes(buf, conversion.acceptedMimes);
+      if (!valid) {
+        await cleanupInputs();
         return errorResponse(
           "INVALID_FILE_TYPE",
-          `File ${files[i].name} doesn't look like a text file. Expected: ${conversion.label}.`,
+          `File ${files[i].name} doesn't match the expected type for ${conversion.label}. Detected: ${detectedMime ?? "unknown"}.`,
           415
         );
       }
-      if (i === 0) primaryMime = conversion.acceptedMimes[0];
-      continue;
     }
 
-    const { valid, detectedMime } = validateMagicBytes(fileBuffers[i], conversion.acceptedMimes);
-    if (!valid) {
-      return errorResponse(
-        "INVALID_FILE_TYPE",
-        `File ${files[i].name} doesn't match the expected type for ${conversion.label}. Detected: ${detectedMime ?? "unknown"}.`,
-        415
-      );
-    }
-    if (i === 0) primaryMime = detectedMime;
-  }
-
-  // ── 7. Upload raw files to S3 (optional, doing first file for now to keep history) ─────────────────────────────────────────────
-  const uuid = randomUUID();
-  const firstInputExt = path.extname(files[0].name) || `.${conversion.acceptedExtensions[0].replace(".", "")}`;
-  const s3InputKey = `uploads/${uuid}${firstInputExt}`;
-  const s3OutputKey = `converted/${uuid}.${conversion.outputExtension}`;
-
-  try {
-    await uploadToS3(s3InputKey, fileBuffers[0], primaryMime ?? "application/octet-stream");
-  } catch (err) {
-    console.error("[convert] S3 upload failed:", err);
-    return errorResponse("S3_UPLOAD_FAILED", "Failed to upload file. Please try again.", 500);
-  }
-
-  // ── 8. Create local temp dir ─────────────────────────────────────────────
-  const tmpDir = path.join(os.tmpdir(), `doczy-${uuid}`);
-  const localInputPaths: string[] = [];
-
-  try {
-    await mkdir(tmpDir, { recursive: true });
-    for (let i = 0; i < files.length; i++) {
-      const ext = path.extname(files[i].name) || `.${conversion.acceptedExtensions[0].replace(".", "")}`;
-      const localPath = path.join(tmpDir, `input-${i}${ext}`);
-      await writeFile(localPath, fileBuffers[i]);
-      localInputPaths.push(localPath);
-    }
-  } catch (err) {
-    await deleteFromS3(s3InputKey).catch(() => {});
-    console.error("[convert] Temp write failed:", err);
-    return errorResponse("SERVER_ERROR", "Failed to prepare files for processing.", 500);
-  }
-
-  try {
-    // ── 9. ClamAV virus scan ───────────────────────────────────────────────
+    // ── 6. ClamAV virus scan ───────────────────────────────────────────────
     for (const localPath of localInputPaths) {
       const scanResult = await scanFile(localPath);
       if (scanResult === "infected") {
-        await deleteFromS3(s3InputKey).catch(() => {});
+        await cleanupInputs();
         return errorResponse(
           "VIRUS_DETECTED",
           "Our virus scanner detected a potential threat in one of your files. The request has been rejected.",
@@ -136,7 +154,7 @@ export async function POST(req: NextRequest) {
         );
       }
       if (scanResult === "error") {
-        await deleteFromS3(s3InputKey).catch(() => {});
+        await cleanupInputs();
         return errorResponse(
           "SCAN_FAILED",
           "Virus scan could not complete. Please try again.",
@@ -145,7 +163,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 10. Conversion ─────────────────────────────────────────
+    // ── 7. Conversion ──────────────────────────────────────────────────────
     let outputPath: string;
     try {
       const result = await convertFile(localInputPaths, tmpDir, conversion.id);
@@ -160,7 +178,7 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    // ── 11. Upload converted file to S3 ────────────────────────────────────
+    // ── 8. Upload converted file to S3 ─────────────────────────────────────
     const outputBuffer = await readFile(outputPath);
     const outputMime =
       conversion.outputExtension === "pdf"
@@ -173,10 +191,10 @@ export async function POST(req: NextRequest) {
 
     await uploadToS3(s3OutputKey, outputBuffer, outputMime);
 
-    // ── 12. Delete raw S3 upload (no longer needed) ────────────────────────
-    await deleteFromS3(s3InputKey);
+    // ── 9. Delete raw S3 uploads (no longer needed) ────────────────────────
+    await cleanupInputs();
 
-    // ── 13. Generate signed download URL (1 hour) ──────────────────────────
+    // ── 10. Generate signed download URL (1 hour) ──────────────────────────
     let baseName = files[0].name.replace(/\.[^/.]+$/, "");
     if (files.length > 1) {
       baseName += `_and_${files.length - 1}_others`;
@@ -186,7 +204,7 @@ export async function POST(req: NextRequest) {
 
     return Response.json({ url });
   } finally {
-    // ── 14. Always clean up local temp files ───────────────────────────────
+    // ── 11. Always clean up local temp files ───────────────────────────────
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
